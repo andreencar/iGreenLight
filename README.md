@@ -126,10 +126,23 @@ and put your team ID there; that file is not in git.
   Background in System Settings. A build that can't register it copies a `sudo sh …/install-awdl-helper.sh` command for
   Terminal instead. Without the helper nothing changes. iOS has no way to turn AWDL off.
 * Cloud Gaming: the Game Pass library (`/v2/titles` plus catalog.gamepass.com box art), queue / wait times.
-* Settings: quality (720p / 1080p / 1080p HQ / 1440p; on Remote Play the console is asked for that resolution, on cloud
-  gaming it picks the server profile through the device-info OS `android` / `windows` / `tizen`), an experimental 16:10
-  request, scaling mode, upscaler (off, MetalFX Spatial, or VideoToolbox ML + MetalFX), debanding, ambient bars in the
+* Freeze recovery: when no frame has arrived for about 150 ms (at least five stream frames) while video data still
+  comes in, the app asks the console for a keyframe, at most once a second.
+* Settings: quality (720p / 720p HQ / 1080p / 1080p HQ / 1440p; on Remote Play the console is asked for that resolution, on cloud
+  gaming it picks the server profile through the device-info OS `android` / `windows` / `tizen`; 720p HQ is the tier the
+  VideoToolbox ML upscaler can take to 1080p, and on cloud gaming it uses the 720p profile), an experimental 16:10
+  request, scaling mode, upscaler (off, MetalFX Spatial, or VideoToolbox ML + MetalFX), debanding, sharpening, ambient bars in the
   letterbox, HDR highlight expansion, region override, and a stats overlay.
+* Picture settings that are on by default: "Draw frames as they arrive" (a frame is drawn when it is decoded instead of
+  at the display's next refresh), "Sharper colour edges" (colour, which the video carries at half resolution, is rebuilt
+  along the brightness edges), "Adaptive sharpening" (while the stream is heavily compressed the sharpening is eased
+  off and the debanding strengthened, judged from the quantiser the decoder reports; a decoder that reports none leaves
+  the sharpening as set) and "Protect frame rate" (the upscaler steps down while the device is hot or the GPU needs more than about
+  60% of a frame, and back up after a longer healthy period). The stats overlay shows when either of the last two is
+  holding something back.
+* Settings → Experimental: Transport, all off by default and **untested against a console**: offer video retransmission
+  (RTX), low-latency playout (no jitter-buffer delay), faster audio catch-up, and reporting each frame's timing to the
+  server as the official web client does. They apply from the next stream and are recorded with each diagnostics run.
 
 The log is written to `~/Library/Containers/app.igreenlight.iGreenLight/Data/Library/Application Support/iGreenLight/iGreenLight.log`.
 You can also open it from Settings → Log. It holds no tokens, but it does hold your console's name and ID, session IDs

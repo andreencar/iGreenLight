@@ -13,6 +13,14 @@ struct StreamStats {
     var path = "-"           // e.g. "host 192.168.1.20:9002 (udp)"
     var upscale = "-"
     var serverSize: String?
+    /// Decoded size in pixels, 0 until known.
+    var width = 0, height = 0
+    /// Average quantiser of the frames decoded in this sample; nil when the decoder reports none.
+    var avgQp: Double?
+    /// "sharpening at 64% (QP 38)" while adaptive sharpening holds it below the setting.
+    var sharpenNote: String?
+    /// What "Protect frame rate" is holding back, when it is.
+    var frameRateNote: String?
     /// Freezes libwebrtc counted since the stream began (a frame that came much later than the ones before it),
     /// and the time spent in them.
     var freezeCount = 0
@@ -38,6 +46,7 @@ final class StatsSampler {
     private var lastTime: Double = 0
     private var lastDecodeTime: Double = 0
     private var lastFramesDecoded: Double = 0
+    private var lastQpSum: Double?
     private var sampleCount = 0
     private var lastFreeze = FreezeCounters()
     private var lastFreezeTime: Double?
@@ -54,7 +63,7 @@ final class StatsSampler {
                 log("Stats", "inbound video: " + keys.map { "\($0)=\(v[$0].map { "\($0)" } ?? "-")" }.joined(separator: " "))
             }
             s.fps = num(v["framesPerSecond"]) ?? 0
-            if let w = num(v["frameWidth"]), let h = num(v["frameHeight"]) { s.resolution = "\(Int(w))x\(Int(h))" }
+            if let w = num(v["frameWidth"]), let h = num(v["frameHeight"]) { s.resolution = "\(Int(w))x\(Int(h))"; s.width = Int(w); s.height = Int(h) }
             s.packetsLost = Int(num(v["packetsLost"]) ?? 0)
             s.jitterMs = (num(v["jitter"]) ?? 0) * 1000
             let bytes = num(v["bytesReceived"]) ?? 0
@@ -63,6 +72,10 @@ final class StatsSampler {
             lastBytes = bytes; lastTime = t
             let dt = num(v["totalDecodeTime"]) ?? 0, fd = num(v["framesDecoded"]) ?? 0
             if fd > lastFramesDecoded { s.decodeMs = (dt - lastDecodeTime) / (fd - lastFramesDecoded) * 1000 }
+            // As StatsExtractor's avgQp. Not every decoder reports qpSum.
+            let qp = num(v["qpSum"])
+            if let qp, let last = lastQpSum, fd > lastFramesDecoded, qp > last { s.avgQp = (qp - last) / (fd - lastFramesDecoded) }
+            lastQpSum = qp
             lastDecodeTime = dt; lastFramesDecoded = fd
             let now = FreezeCounters(freezes: num(v["freezeCount"]) ?? 0, seconds: num(v["totalFreezesDuration"]) ?? 0, pauses: num(v["pauseCount"]) ?? 0,
                                      nack: num(v["nackCount"]) ?? 0, pli: num(v["pliCount"]) ?? 0, dropped: num(v["framesDropped"]) ?? 0,

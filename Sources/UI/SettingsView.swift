@@ -44,7 +44,7 @@ struct SettingsView: View {
 
                 XboxSection(title: "Stream") {
                     XboxChoiceRow(id: "set-quality", title: "Quality",
-                                  detail: "Remote Play asks the console for this resolution (1440p is its maximum, about 17–28 Mbps; 1080p HQ about 12, 1080p about 9, 720p about 2). Cloud gaming picks the server profile, which tops out at 1080p HQ.",
+                                  detail: "Remote Play asks the console for this resolution (1440p is its maximum, about 17–28 Mbps; 1080p HQ about 12, 1080p about 9, 720p about 2). 720p HQ is 720p with more bitrate, and the tier the VideoToolbox ML upscaler can take to 1080p: it accepts sources up to 1280 px wide. Cloud gaming picks the server profile, which tops out at 1080p HQ; 720p HQ uses the 720p profile there.",
                                   options: StreamQuality.allCases, label: \.label, selection: $settings.quality)
                     XboxToggleRow(id: "set-1610", title: "Request 16:10 (experimental)",
                                   detail: "Sends \(settings.requestedSize.width)x\(settings.requestedSize.height) in dimensionschanged and displayInfo. The size the server actually sends is in the stats overlay.",
@@ -67,12 +67,21 @@ struct SettingsView: View {
                     XboxChoiceRow(id: "set-upscaler", title: "Upscaler",
                                   detail: "VideoToolbox ML uses Apple's low-latency super-resolution model. It only accepts sources up to 1280 px wide (so it upgrades 720p to 1080p); larger streams fall back to MetalFX automatically.",
                                   options: Upscaler.allCases, label: \.label, selection: $settings.upscaler)
+                    XboxToggleRow(id: "set-protectfps", title: "Protect frame rate",
+                                  detail: "Steps the upscaler down (VideoToolbox ML, then MetalFX, then off) while the device is hot or drawing a frame takes the GPU more than about 60% of the frame's time, and back up once it has been well for a while. The stats overlay shows when it is holding the upscaler back.",
+                                  isOn: $settings.protectFrameRate)
                     XboxToggleRow(id: "set-deband", title: "Debanding",
                                   detail: "Smooths the visible steps 8-bit video leaves in skies, fog and dark gradients. Edges and texture are left alone.",
                                   isOn: $settings.deband)
                     XboxChoiceRow(id: "set-sharpness", title: "Sharpening",
                                   detail: "Brings back fine detail the video compression and upscaling soften. It adapts to the picture: edges that are already crisp are left alone, so there are no halos. Lower it if compression noise becomes visible.",
                                   options: Array(0...10), label: { $0 == 0 ? "Off" : "\($0)" }, selection: $settings.sharpness)
+                    XboxToggleRow(id: "set-adaptivesharp", title: "Adaptive sharpening",
+                                  detail: "When the stream is short of bitrate, sharpening brings out its blocks and ringing. This eases the sharpening off (never fully) and strengthens the debanding while the picture is heavily compressed, and restores both when it is clean again. It goes by the quantiser the decoder reports; with a decoder that reports none it does nothing.",
+                                  isOn: $settings.adaptiveSharpening)
+                    XboxToggleRow(id: "set-chroma", title: "Sharper colour edges",
+                                  detail: "The video carries colour at half the resolution of brightness. This rebuilds colour edges along the brightness edges, so red text and saturated outlines don't smear. Off: plain interpolation.",
+                                  isOn: $settings.chromaUpsampling)
                     XboxToggleRow(id: "set-ambient", title: "Ambient bars",
                                   detail: "In Fit mode, fills the black bars with a soft glow in the colours of the picture's edge, fading to black away from it.",
                                   isOn: $settings.ambientBars)
@@ -82,6 +91,9 @@ struct SettingsView: View {
                     XboxToggleRow(id: "set-pacing", title: "Smooth frame pacing (adds a little latency)",
                                   detail: "Frames arrive from the network unevenly, which shows as judder in steady camera movement. This holds each frame for about half a frame (8 ms at 60 fps) and shows them at an even rhythm. The stats overlay shows the result under pacing.",
                                   isOn: $settings.framePacing)
+                    XboxToggleRow(id: "set-drawonarrival", title: "Draw frames as they arrive",
+                                  detail: "Draws each frame the moment it is decoded instead of waiting for the display's next refresh to pick it up, which saves up to one refresh of latency. Not used while smooth frame pacing is on.",
+                                  isOn: $settings.drawOnArrival)
                     #if os(macOS)
                     XboxToggleRow(id: "set-fullscreen", title: "Start streams in full screen", isOn: $settings.startFullscreen)
                     #endif
@@ -141,6 +153,21 @@ struct SettingsView: View {
                     XboxChoiceRow(id: "set-display", title: "Reported display size",
                                   detail: "Sent in X-MS-Device-Info displayInfo and dimensionschanged. Now: \(settings.osName), \(settings.requestedSize.width)×\(settings.requestedSize.height).",
                                   options: ReportedDisplaySize.allCases, label: \.label, selection: $settings.reportedDisplaySize)
+                }
+
+                XboxSection(title: "Experimental: Transport") {
+                    XboxToggleRow(id: "set-rtx", title: "Offer retransmission (RTX)",
+                                  detail: "Offers a retransmission stream for video, so a lost packet can be resent instead of costing a keyframe. Untested against a console: it only does anything if the console accepts it. Applies from the next stream.",
+                                  isOn: $settings.offerRTX)
+                    XboxToggleRow(id: "set-playout", title: "Low-latency playout",
+                                  detail: "Decodes and shows each frame as soon as it is complete instead of holding it to even out network jitter. Lower latency, more uneven motion on a jittery network. Untested against a console. Applies from the next stream.",
+                                  isOn: $settings.lowLatencyPlayout)
+                    XboxToggleRow(id: "set-audiocatchup", title: "Faster audio catch-up",
+                                  detail: "Lets audio speed up more readily to shed delay after a network hiccup, at the cost of more audible time-stretching. Untested against a console. Applies from the next stream.",
+                                  isOn: $settings.fastAudioCatchUp)
+                    XboxToggleRow(id: "set-framefeedback", title: "Report frame timing to the server",
+                                  detail: "Sends the timing of every displayed frame on the input channel, as the official web client does. Untested against a console: whether it changes what the console sends is unknown. Applies from the next stream.",
+                                  isOn: $settings.frameTimingFeedback)
                 }
 
                 XboxSection(title: "Network") {

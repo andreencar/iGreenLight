@@ -2,21 +2,26 @@ import Foundation
 import SwiftUI
 
 enum StreamQuality: String, CaseIterable, Identifiable, Codable {
-    case p720, p1080, p1080HQ, p1440
+    // The raw values are what is stored: a new tier gets a new name and the others keep theirs.
+    case p720, p720HQ, p1080, p1080HQ, p1440
     var id: String { rawValue }
     var label: String {
-        switch self { case .p720: "720p"; case .p1080: "1080p"; case .p1080HQ: "1080p HQ"; case .p1440: "1440p (best)" }
+        switch self { case .p720: "720p"; case .p720HQ: "720p HQ"; case .p1080: "1080p"; case .p1080HQ: "1080p HQ"; case .p1440: "1440p (best)" }
     }
     /// Value for the control-channel `userRequestedResolutionUpdate` message (what the official web client sends).
     /// Typical bitrates: 720 ≈ 2 Mbps, 1080 ≈ 9 Mbps, 1080HQ ≈ 12 Mbps, 1440 ≈ 17–28 Mbps.
     var resolutionAlias: String {
-        switch self { case .p720: "720"; case .p1080: "1080"; case .p1080HQ: "1080HQ"; case .p1440: "1440" }
+        switch self { case .p720: "720"; case .p720HQ: "720HQ"; case .p1080: "1080"; case .p1080HQ: "1080HQ"; case .p1440: "1440" }
     }
     /// os.name in X-MS-Device-Info picks the server-side profile (Better xCloud's trick).
     var osName: String {
-        switch self { case .p720: "android"; case .p1080: "windows"; case .p1080HQ, .p1440: "tizen" }
+        // The "720HQ" alias is a Remote Play control message. Cloud gaming has no profile known to match it, so
+        // 720p HQ asks for the 720p one there; what the cloud sends for it is unverified.
+        switch self { case .p720, .p720HQ: "android"; case .p1080: "windows"; case .p1080HQ, .p1440: "tizen" }
     }
-    var height: Int { self == .p720 ? 720 : self == .p1440 ? 1440 : 1080 }
+    var height: Int {
+        switch self { case .p720, .p720HQ: 720; case .p1080, .p1080HQ: 1080; case .p1440: 1440 }
+    }
 }
 
 enum ScalingMode: String, CaseIterable, Identifiable, Codable {
@@ -126,11 +131,19 @@ final class AppSettings: ObservableObject {
     @AppStorage("deband") var deband = true
     /// Contrast-adaptive sharpening, 0 (off) ... 10.
     @AppStorage("sharpness") var sharpness = 3
+    /// Back the sharpening off, and the debanding up, while the stream is heavily compressed (`SharpenGovernor`).
+    @AppStorage("adaptiveSharpening") var adaptiveSharpening = true
+    /// Luma-guided chroma upsampling in the renderer's YUV→RGB pass.
+    @AppStorage("chromaUpsampling") var chromaUpsampling = true
+    /// Lower the upscaler while the device is hot or the GPU can't keep up (`UpscalerGovernor`).
+    @AppStorage("protectFrameRate") var protectFrameRate = true
     @AppStorage("ambientBars") var ambientBars = true
     @AppStorage("edrExpansion") var edrExpansion: EDRExpansion = .off
     @AppStorage("holdResolution") var holdResolution = true
     /// Show frames on an even cadence from a short queue (`FramePacer`); costs about half a stream frame of latency.
     @AppStorage("framePacing") var framePacing = false
+    /// Unpaced only: draw each frame when the decoder delivers it instead of at the next display tick.
+    @AppStorage("drawOnArrival") var drawOnArrival = true
     @AppStorage("startFullscreen") var startFullscreen = true
     @AppStorage("locale") var locale = "en-US"
     @AppStorage("vibration") var vibration = true
@@ -163,6 +176,11 @@ final class AppSettings: ObservableObject {
     /// 0 = no b=AS line (server default).
     @AppStorage("maxVideoBitrateKbps") var maxVideoBitrateKbps = 0
     @AppStorage("reportedDisplaySize") var reportedDisplaySize: ReportedDisplaySize = .auto
+    // Transport options (`WebRTCClient.Options`), read when a stream starts. None has been tried against a console.
+    @AppStorage("offerRTX") var offerRTX = false
+    @AppStorage("lowLatencyPlayout") var lowLatencyPlayout = false
+    @AppStorage("fastAudioCatchUp") var fastAudioCatchUp = false
+    @AppStorage("frameTimingFeedback") var frameTimingFeedback = false
 
     var osName: String { clientProfile == .auto ? quality.osName : clientProfile.rawValue }
 
@@ -172,6 +190,9 @@ final class AppSettings: ObservableObject {
          "sdkProfile": sdkProfile.rawValue, "codecPreference": codecPreference.rawValue, "codecOnlyPreferred": codecOnlyPreferred,
          "maxVideoBitrateKbps": maxVideoBitrateKbps, "requestedSize": "\(requestedSize.width)x\(requestedSize.height)",
          "request1610": request1610, "reportedDisplaySize": reportedDisplaySize.rawValue, "upscaler": upscaler.rawValue, "deband": deband, "sharpness": sharpness, "ambientBars": ambientBars, "edrExpansion": edrExpansion.rawValue, "holdResolution": holdResolution, "framePacing": framePacing,
+         "drawOnArrival": drawOnArrival, "chromaUpsampling": chromaUpsampling, "adaptiveSharpening": adaptiveSharpening,
+         "protectFrameRate": protectFrameRate, "offerRTX": offerRTX, "lowLatencyPlayout": lowLatencyPlayout,
+         "fastAudioCatchUp": fastAudioCatchUp, "frameTimingFeedback": frameTimingFeedback,
          "consoleAddressCandidate": consoleAddressCandidate]
     }
 

@@ -1,5 +1,9 @@
 import Foundation
+import QuartzCore
 import WebRTC
+#if os(iOS)
+import UIKit
+#endif
 
 struct StreamTarget: Hashable, Codable, Identifiable {
     enum Kind: String, Codable { case home, cloud }
@@ -46,6 +50,7 @@ final class StreamSession: ObservableObject {
     private var runTask: Task<Void, Never>?
     private var keepaliveTask: Task<Void, Never>?
     private var statsTask: Task<Void, Never>?
+    private var freezeTask: Task<Void, Never>?
     private var inputTimer: DispatchSourceTimer?
     private var inputPump: InputPump?
     private var attachedVideo = false
@@ -54,6 +59,11 @@ final class StreamSession: ObservableObject {
     private var stopped = false
     private var holdsAWDL = false
     private var statsSampler = StatsSampler()
+    /// See `StreamPace`; 0 until the stats report a frame rate.
+    private var nominalFPS = 0.0
+    private var freeze = FreezeDetector()
+    private var sharpen = SharpenGovernor()
+    private var upscalerGovernor = UpscalerGovernor()
 
     init(target: StreamTarget, auth: AuthManager) {
         self.target = target
@@ -125,8 +135,15 @@ final class StreamSession: ObservableObject {
 
             phase = .connecting("Negotiating WebRTC…")
             let rtc = try WebRTCClient(options: .init(codec: settings.codecPreference, onlyPreferredCodec: settings.codecOnlyPreferred,
-                                                  maxVideoBitrateKbps: settings.maxVideoBitrateKbps))
+                                                  maxVideoBitrateKbps: settings.maxVideoBitrateKbps, offerRTX: settings.offerRTX,
+                                                  lowLatencyPlayout: settings.lowLatencyPlayout, fastAudioCatchUp: settings.fastAudioCatchUp,
+                                                  frameTimingFeedback: settings.frameTimingFeedback))
             self.rtc = rtc
+            if rtc.options.offerRTX || rtc.options.lowLatencyPlayout || rtc.options.fastAudioCatchUp || rtc.options.frameTimingFeedback {
+                log("Stream", "experimental transport: RTX \(rtc.options.offerRTX), low-latency playout \(rtc.options.lowLatencyPlayout), fast audio catch-up \(rtc.options.fastAudioCatchUp), frame timing feedback \(rtc.options.frameTimingFeedback)")
+            }
+            // The renderer calls this from its own threads for every frame shown; cleared again in teardown.
+            if rtc.options.frameTimingFeedback { renderer?.onFramePresented = rtc.feedback.framePresented }
             wire(rtc)
             let offer = try await rtc.createOffer()
             try checkActive()
@@ -151,6 +168,7 @@ final class StreamSession: ObservableObject {
             if case .connecting = phase { phase = .connecting("Connecting to \(cloud ? "xCloud" : "console")…") }
             startKeepalive()
             startStats()
+            startFreezeWatch()
             startConnectTimeout()
         } catch is CancellationError {
             // Our own stop, normally. Anything else that cancels (a sign-out during the token refresh) must still end the session.
@@ -387,9 +405,13 @@ final class StreamSession: ObservableObject {
                     rec.recordStats(report)
                     self.diagnosticsLines = rec.liveLines
                 }
-                self.recoverFromFreeze(report)
                 self.holdResolution()
                 var s = self.statsSampler.sample(report)
+                self.nominalFPS = StreamPace.nominalFPS(sample: s.fps, previous: self.nominalFPS)
+                // A second without a decoded frame has no decode time; the last one known stays.
+                if let d = s.decodeMs { rtc.feedback.decodeMs = d }
+                s.sharpenNote = self.adaptSharpening(s)
+                s.frameRateNote = self.protectFrameRate()
                 s.upscale = self.renderer?.upscaleStatus ?? "-"
                 s.serverSize = self.serverVideoSize.map { "\($0.0)x\($0.1)" }
                 self.stats = s
@@ -397,23 +419,72 @@ final class StreamSession: ObservableObject {
         }
     }
 
-    /// Video packets keep arriving but no frame was decoded for a whole second: the decoder lost its reference.
-    /// Ask for a keyframe (the console answers within about a second), at most once every 2 s.
-    private func recoverFromFreeze(_ report: RTCStatisticsReport) {
-        guard let v = report.statistics.values.first(where: { $0.type == "inbound-rtp" && ($0.values["kind"] as? String) == "video" })?.values,
-              let decoded = (v["framesDecoded"] as? NSNumber)?.doubleValue,
-              let bytes = (v["bytesReceived"] as? NSNumber)?.doubleValue else { return }
-        defer { freezeLast = (decoded, bytes) }
-        guard let last = freezeLast, decoded > 0 else { return }
-        if decoded == last.decoded, bytes - last.bytes > 20_000, Date().timeIntervalSince(freezeLastRequest) > 2 {
-            freezeLastRequest = Date()
-            log("Stream", "video frozen with data still arriving; requesting a keyframe")
-            recorder?.event("freeze.keyframeRequested")
-            requestKeyframe()
+    /// The picture stopped while video data keeps arriving: the decoder lost its reference, and only a keyframe
+    /// brings it back (the console answers within about a second). Checked every 100 ms from the renderer's own
+    /// clock, which costs nothing; stats are only fetched while a frame is overdue (`FreezeDetector`).
+    private func startFreezeWatch() {
+        freezeTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: UInt64(FreezeDetector.tick * 1_000_000_000)) } catch { return }
+                guard let self, let rtc = self.rtc, !self.stopped else { return }
+                guard self.freeze.suspects(sinceLastFrame: self.renderer?.secondsSinceLastFrame, fps: self.nominalFPS,
+                                           active: self.canRecoverFreeze, now: CACurrentMediaTime()) else { continue }
+                let report = await rtc.stats()
+                guard !self.stopped, !Task.isCancelled else { return }
+                guard let v = report.statistics.values.first(where: { $0.type == "inbound-rtp" && ($0.values["kind"] as? String) == "video" })?.values,
+                      let decoded = (v["framesDecoded"] as? NSNumber)?.doubleValue,
+                      let bytes = (v["bytesReceived"] as? NSNumber)?.doubleValue else { continue }
+                guard let stall = self.freeze.observe(.init(bytes: bytes, framesDecoded: decoded), sinceLastFrame: self.renderer?.secondsSinceLastFrame,
+                                                      fps: self.nominalFPS, active: self.canRecoverFreeze, now: CACurrentMediaTime()) else { continue }
+                log("Stream", "video frozen with data still arriving; requesting a keyframe" + String(format: " (no frame for %.0f ms)", stall * 1000))
+                self.recorder?.event("freeze.keyframeRequested", ["stallMs": Int((stall * 1000).rounded())])
+                self.requestKeyframe()
+            }
         }
     }
-    private var freezeLast: (decoded: Double, bytes: Double)?
-    private var freezeLastRequest = Date.distantPast
+
+    /// Not before the stream is up, and not while the app is in the background on iOS: the stream is only kept
+    /// alive there for a grace period and nobody is looking at it.
+    private var canRecoverFreeze: Bool {
+        guard phase == .streaming, !stopped else { return false }
+        #if os(iOS)
+        return UIApplication.shared.applicationState != .background
+        #else
+        return true
+        #endif
+    }
+
+    /// Sets the renderer's sharpening and debanding multipliers from how compressed the stream is. Returns the
+    /// line for the stats overlay while the sharpening is held below the setting.
+    private func adaptSharpening(_ s: StreamStats) -> String? {
+        guard let renderer, settings.adaptiveSharpening else { return nil }
+        let before = sharpen.applied
+        sharpen.update(.init(avgQp: s.avgQp, codec: s.codec, fps: s.fps))
+        renderer.sharpenScale = sharpen.sharpenScale
+        renderer.debandBoost = sharpen.debandBoost
+        let source = sharpen.source?.label ?? "-"
+        if sharpen.applied != before {
+            log("Stream", String(format: "adaptive sharpening: sharpen ×%.2f, deband ×%.2f (%@)", sharpen.sharpenScale, sharpen.debandBoost, source))
+            recorder?.event("sharpen.adapted", ["sharpenScale": Double(sharpen.sharpenScale), "debandBoost": Double(sharpen.debandBoost), "source": source])
+        }
+        return sharpen.sharpenScale < 1 ? String(format: "sharpening at %.0f%% (%@)", sharpen.sharpenScale * 100, source) : nil
+    }
+
+    /// Sets the renderer's upscaler ceiling from the device's heat and GPU load. Returns the line for the stats
+    /// overlay while the chosen upscaler is held back.
+    private func protectFrameRate() -> String? {
+        guard let renderer, settings.protectFrameRate else { return nil }
+        // The ML scaler works outside the command buffer's GPU clock, so while it runs the load is the whole pass.
+        let mlRunning = settings.upscaler.capped(by: renderer.maxUpscaler) == .videoToolbox
+        let d = upscalerGovernor.update(thermal: ProcessInfo.processInfo.thermalState, gpuMs: mlRunning ? renderer.recentRenderMs : renderer.recentGPUMs,
+                                        fps: nominalFPS, setting: settings.upscaler)
+        renderer.maxUpscaler = d.cap
+        if let change = d.change {
+            log("Stream", "protect frame rate: \(change)")
+            recorder?.event("upscaler.ceiling", ["ceiling": d.cap.rawValue, "reason": change])
+        }
+        return upscalerGovernor.status
+    }
 
     /// AWDL is kept off from the start of the session to its end, while the setting is on (it can change mid-stream).
     func applyAWDLHold() {
@@ -433,6 +504,18 @@ final class StreamSession: ObservableObject {
         renderer?.ambient = settings.ambientBars
         renderer?.edr = settings.edrExpansion
         renderer?.framePacing = settings.framePacing
+        renderer?.drawOnArrival = settings.drawOnArrival
+        renderer?.chromaUpsampling = settings.chromaUpsampling
+        // Switched off: back to the plain setting now, and start from scratch if it is switched on again.
+        if !settings.adaptiveSharpening {
+            sharpen = SharpenGovernor()
+            renderer?.sharpenScale = 1
+            renderer?.debandBoost = 1
+        }
+        if !settings.protectFrameRate {
+            upscalerGovernor = UpscalerGovernor()
+            renderer?.maxUpscaler = .videoToolbox
+        }
     }
 
     /// The console lowers the stream resolution by itself (static screens, low bitrate). When it has stayed below
@@ -498,6 +581,8 @@ final class StreamSession: ObservableObject {
         runTask?.cancel()
         keepaliveTask?.cancel()
         statsTask?.cancel()
+        freezeTask?.cancel()
+        renderer?.onFramePresented = nil
         inputTimer?.cancel(); inputTimer = nil
         inputPump = nil
         keyboard.stop()

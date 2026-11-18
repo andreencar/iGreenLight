@@ -132,6 +132,10 @@ struct StreamView: View {
             .onChange(of: settings.ambientBars) { session.applySettings() }
             .onChange(of: settings.edrExpansion) { session.applySettings() }
             .onChange(of: settings.framePacing) { session.applySettings() }
+            .onChange(of: settings.drawOnArrival) { session.applySettings() }
+            .onChange(of: settings.chromaUpsampling) { session.applySettings() }
+            .onChange(of: settings.adaptiveSharpening) { session.applySettings() }
+            .onChange(of: settings.protectFrameRate) { session.applySettings() }
             #if os(macOS)
             .onChange(of: settings.awdlOffWhileStreaming) { session.applyAWDLHold() }
             #endif
@@ -358,6 +362,8 @@ struct StreamView: View {
             Text("path: \(s.path)")
             Text("server video: \(s.serverSize ?? "-")  requested: \(settings.requestedSize.width)x\(settings.requestedSize.height)")
             Text("upscale: \(s.upscale)  [\(settings.scaling.rawValue)]")
+            if let note = s.frameRateNote { Text("protect frame rate: \(note)").foregroundStyle(.orange) }
+            if let note = s.sharpenNote { Text("adaptive: \(note)") }
             Text("render cost: \(session.renderer?.timingSummary ?? "-")")
             Text("pacing: \(session.renderer?.pacingSummary ?? "-")")
             Text(s.freezeLine).foregroundStyle(s.freezeIsRecent ? .orange : .white)
