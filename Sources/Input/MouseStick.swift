@@ -26,6 +26,15 @@ struct MouseStick {
 
     private var samples: [(time: Double, dx: Float, dy: Float)] = []
 
+    /// Written out: with a private stored property the memberwise initialiser is private too before Swift 6.3,
+    /// and the tests set these.
+    init(fullSpeed: Float = 400, deadZone: Float = 0.1, curve: Float = 1, window: Double = 0.032) {
+        self.fullSpeed = fullSpeed
+        self.deadZone = deadZone
+        self.curve = curve
+        self.window = window
+    }
+
     /// Below this the mouse counts as still (after the window's averaging, it's the tail of one small event).
     private static let stillness: Float = 0.004
 

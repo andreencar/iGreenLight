@@ -28,8 +28,12 @@ struct MouseStickTests {
         var stick = MouseStick(fullSpeed: 1000, deadZone: 0.2)
         let t = steady(&stick, speed: 8000, direction: (0.6, 0.8))
         let v = stick.value(at: t)
-        #expect(abs((v.x * v.x + v.y * v.y).squareRoot() - 1) < 0.001)
-        #expect(abs(v.x - 0.6) < 0.001 && abs(v.y - 0.8) < 0.001)
+        // In steps: Xcode 26's compiler gives up on these as single expressions inside #expect.
+        let length: Float = (v.x * v.x + v.y * v.y).squareRoot()
+        #expect(abs(length - 1) < 0.001)
+        let offX: Float = abs(v.x - 0.6), offY: Float = abs(v.y - 0.8)
+        #expect(offX < 0.001)
+        #expect(offY < 0.001)
     }
 
     @Test func slowMovementIsLiftedPastTheDeadZone() {

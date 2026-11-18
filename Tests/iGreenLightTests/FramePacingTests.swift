@@ -240,9 +240,14 @@ struct FramePacerTests {
         #expect(firstAfter.time - frames[count].time < 0.03)
         // And the cadence is even again within a second.
         let gaps = intervals(shown, after: frames[count].time + 1)
-        #expect(Double(gaps.filter { abs($0 - 1000.0 / 60) < 0.01 }.count) / Double(gaps.count) > 0.85)
-        let held = shown.filter { $0.frame >= count + 60 }.map { ($0.time - frames[$0.frame].time) * 1000 }
-        #expect(held.reduce(0, +) / Double(held.count) < 8.3 + 8.4)
+        // In steps: Xcode 26's compiler gives up on these as single expressions inside #expect.
+        let step: Double = 1000.0 / 60
+        let even: Int = gaps.filter { abs($0 - step) < 0.01 }.count
+        let evenShare: Double = Double(even) / Double(gaps.count)
+        #expect(evenShare > 0.85)
+        let held: [Double] = shown.filter { $0.frame >= count + 60 }.map { ($0.time - frames[$0.frame].time) * 1000 }
+        let meanHeld: Double = held.reduce(0, +) / Double(held.count)
+        #expect(meanHeld < 16.7)
     }
 
     @Test func followsAFrameRateChange() {
