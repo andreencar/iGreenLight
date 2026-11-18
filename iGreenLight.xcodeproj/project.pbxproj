@@ -82,6 +82,7 @@
 		B0BBF56C7746997E04AA342D /* ICE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4623FD878F55005D8EBBD928 /* ICE.swift */; };
 		B1AD812DAB8897E9E93429E6 /* PadNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E105649F06F83C4BC99F62 /* PadNavigator.swift */; };
 		B533E40E3C25592397F1DDCF /* KeyboardMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F39D45BDB5D8466DF37EFF /* KeyboardMapTests.swift */; };
+		B687259BDCFC4567C339C416 /* RenderQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 029018A51C2A61308A652F09 /* RenderQualityTests.swift */; };
 		B6D0D07336BD67A6CB7EA635 /* WebRTCClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3C1A5AC30532D33BB5E6A29 /* WebRTCClient.swift */; };
 		B8FD69AB51B51AE5F45B3766 /* SessionAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217AD6E1F003FE301269578C /* SessionAPI.swift */; };
 		BCF8C13EDB5883635526B04E /* FrameInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18FE33219AFBC60745DA90E /* FrameInspector.swift */; };
@@ -166,6 +167,7 @@
 
 /* Begin PBXFileReference section */
 		008870062782A81DC569DA20 /* GamepadInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GamepadInput.swift; sourceTree = "<group>"; };
+		029018A51C2A61308A652F09 /* RenderQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderQualityTests.swift; sourceTree = "<group>"; };
 		02E105649F06F83C4BC99F62 /* PadNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PadNavigator.swift; sourceTree = "<group>"; };
 		03DCFF2EFCFB4CC7A7A2AA41 /* MetalVideoRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalVideoRenderer.swift; sourceTree = "<group>"; };
 		03ED4B9FBB640CA9E6159FF9 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
@@ -285,6 +287,7 @@
 				F7F39D45BDB5D8466DF37EFF /* KeyboardMapTests.swift */,
 				38C286B96942B31CD2ACCB3A /* MouseStickTests.swift */,
 				E627A6E0AB7D11DBAC157081 /* RedactTests.swift */,
+				029018A51C2A61308A652F09 /* RenderQualityTests.swift */,
 				5B8289D75E1A72175065AA1E /* SDPAndBitstreamTests.swift */,
 				FCF22C7C16135E50FB5A4D03 /* ShaderTests.swift */,
 			);
@@ -663,6 +666,7 @@
 				B533E40E3C25592397F1DDCF /* KeyboardMapTests.swift in Sources */,
 				AA9EF744E0BBA1116FF4AA9A /* MouseStickTests.swift in Sources */,
 				78D9072893443A9CFB5F6D1C /* RedactTests.swift in Sources */,
+				B687259BDCFC4567C339C416 /* RenderQualityTests.swift in Sources */,
 				BD3B1EB8EBFA4249003A58C8 /* SDPAndBitstreamTests.swift in Sources */,
 				70244E3DCE423DBE89D33CEF /* ShaderTests.swift in Sources */,
 			);

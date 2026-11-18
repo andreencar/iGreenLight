@@ -16,23 +16,62 @@ struct YUVParams {
     float3x3 matrix;   // YCbCr -> RGB
     float3 offset;     // subtracted before the matrix
     float3 scale;      // range expansion
-    float4 chroma;     // xy: added to the uv of the chroma sample (siting correction), zw: unused
+    float4 chroma;     // xy: added to the uv of the chroma sample (siting correction), z: 1 = luma-guided
+                       // upsampling, w: 1 / luma difference at which a neighbour stops counting
 };
 
-// NV12 / 420f / 420v -> RGB at source resolution.
+// One of the four chroma texels around the pixel, for the luma-guided upsample: its chroma times its weight in
+// xy, the weight in z. `texel` is its index, `bilinear` its bilinear weight, `y` the pixel's own luma.
+static float3 guided_chroma(texture2d<float> yTex, texture2d<float> uvTex, float2 texel, float2 size,
+                            float bilinear, float y, float4 chroma) {
+    constexpr sampler nearest(filter::nearest, address::clamp_to_edge);
+    constexpr sampler linear(filter::linear, address::clamp_to_edge);
+    // Past the border the texel is the border one, as clamp-to-edge filtering has it.
+    float2 centre = (clamp(texel, float2(0.0), size - 1.0) + 0.5) / size;
+    // The luma where this chroma sample was taken: its own position with the siting correction undone. For
+    // Left siting that is the middle of luma column 2j, halfway between rows 2j and 2j+1, so the bilinear
+    // fetch gives the mean of the two luma pixels the sample sits between.
+    float d = (yTex.sample(linear, centre - chroma.xy).r - y) * chroma.w;
+    // The small constant keeps the sum from vanishing where no neighbour's luma is close (a line one pixel
+    // wide): there the weights are all equally tiny and the result is the bilinear one again.
+    float w = bilinear * (exp(-d * d) + 1e-3);
+    return float3(uvTex.sample(nearest, centre).rg * w, w);
+}
+
+// NV12 / 420f / 420v / x420 -> RGB at source resolution.
 // Chroma siting: a bilinear fetch assumes chroma texel j sits in the middle of luma columns 2j and 2j+1
 // (x = 2j+1 in luma pixels, where luma column i has its centre at i+0.5). H.264's default "Left" siting
 // puts it on luma column 2j instead (x = 2j+0.5), so the texture holds the chroma of a point half a luma
 // pixel to the left of where the sampler thinks it is. Reading the chroma for position x therefore means
 // sampling half a luma pixel (a quarter of a chroma texel) further right: p.chroma.x = +0.25 / chroma width.
 // Without it the colour sits half a luma pixel right of its luma. Vertically Left is centred: no offset.
+//
+// Luma-guided upsampling (p.chroma.z): chroma has half the resolution of luma, and bilinear filtering
+// spreads the colour of one side of an edge half a chroma texel into the other: a red letter gets a red
+// fringe, a white one a tint of the background. The luma has the edge at full resolution, so each of the
+// four chroma texels the bilinear fetch would blend gets its bilinear weight times how close the luma at its
+// own position is to this pixel's luma (a joint bilateral filter). Texels from the far side of an edge drop
+// out; where the luma is flat the factors are equal and the result is the bilinear one. Same four texels and
+// the same siting correction as the plain fetch; four more luma taps and an exp each.
 fragment float4 nv12_fragment(VOut in [[stage_in]],
                               texture2d<float> yTex [[texture(0)]],
                               texture2d<float> uvTex [[texture(1)]],
                               constant YUVParams &p [[buffer(0)]]) {
     constexpr sampler s(filter::linear, address::clamp_to_edge);
     float y = yTex.sample(s, in.uv).r;
-    float2 uv = uvTex.sample(s, in.uv + p.chroma.xy).rg;
+    float2 uv;
+    if (p.chroma.z < 0.5) {
+        uv = uvTex.sample(s, in.uv + p.chroma.xy).rg;
+    } else {
+        float2 size = float2(uvTex.get_width(), uvTex.get_height());
+        float2 st = (in.uv + p.chroma.xy) * size - 0.5;
+        float2 i = floor(st), f = st - i;
+        float3 sum = guided_chroma(yTex, uvTex, i, size, (1.0 - f.x) * (1.0 - f.y), y, p.chroma)
+                   + guided_chroma(yTex, uvTex, i + float2(1, 0), size, f.x * (1.0 - f.y), y, p.chroma)
+                   + guided_chroma(yTex, uvTex, i + float2(0, 1), size, (1.0 - f.x) * f.y, y, p.chroma)
+                   + guided_chroma(yTex, uvTex, i + float2(1, 1), size, f.x * f.y, y, p.chroma);
+        uv = sum.xy / sum.z;
+    }
     float3 ycc = (float3(y, uv) - p.offset) * p.scale;
     return float4(saturate(p.matrix * ycc), 1.0);
 }
@@ -104,6 +143,7 @@ static float3 srgb_to_linear(float3 c) {
 }
 
 // Draw the (upscaled) frame into the drawable with letterbox / zoom / stretch.
+// The frame comes in with 10 bits a channel; the SDR drawable has 8, and this is the one place it is rounded.
 // Optional steps, in order: contrast-adaptive sharpening, debanding (smooths 8-bit steps in flat gradients
 // and dithers the result), then SDR→EDR expansion (highlights above the knee are stretched into the display's
 // HDR headroom). Sharpening and debanding both read the untouched texture, so neither sees the other's output:
