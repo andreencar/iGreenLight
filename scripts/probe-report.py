@@ -18,5 +18,10 @@ for line in open(sys.argv[1]):
         resp = {k: v for k, v in o.get("response", {}).items() if k not in ("messageType", "requestId", "sdpType", "_errorDetails")}
         if resp: print("    response:", resp)
         if o.get("error"): print("    offer error:", o["error"][:200])
-    for k in ("sps", "seiTypes", "pixelFormats", "colorInfo", "hdrMetadataSeen", "statsResolutions", "videoMbps", "serverReportedVideoSizes", "framesDecoded", "unhandledMessages", "note"):
+    for k in ("sps", "seiTypes", "pixelFormats", "colorInfo", "hdrMetadataSeen", "statsResolutions", "videoMbps", "serverReportedVideoSizes", "framesDecoded", "unhandledMessages", "note",
+              # Transport: what the rtx / playout / feedback / input-channel probes are compared on.
+              "rtxOffered", "rtxNegotiated", "playoutDelayExtension", "rttMs", "jitterBufferMs", "decodeMs", "nackTotal", "pliTotal",
+              "freezesTotal", "freezeSecondsTotal", "framesDroppedTotal", "packetsReceivedTotal", "packetsLostTotal",
+              "retransmittedPacketsTotal", "retransmittedBytesTotal", "fecPacketsTotal",
+              "channels", "inputError", "lastFrameSecond", "connectionState", "serverDisconnectAtSecond"):
         if k in r: print(f"    {k}: {r[k]}")

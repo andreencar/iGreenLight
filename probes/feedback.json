@@ -1,0 +1,10 @@
+{
+  "gapSeconds": 10,
+  "probes": [
+    {"name": "reference A: no frame timing feedback", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "frame timing feedback A (the app's own reports; compare videoMbps, resolution, freezes)", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "frameFeedback": true},
+    {"name": "reference B: no frame timing feedback", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "frame timing feedback B", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "frameFeedback": true},
+    {"name": "frame timing feedback + low-latency playout", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "frameFeedback": true, "lowLatencyPlayout": true}
+  ]
+}

@@ -18,6 +18,10 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
     let input: InputChannel
     let message: MessageChannel
     let chat: ChatChannel
+    /// Channels from `Options.extraDataChannels`, in that order.
+    let extraChannels: [DataChannel]
+    /// Per-frame timing reports to the server; does nothing unless `Options.frameTimingFeedback` is on.
+    let feedback: FrameFeedback
 
     var onVideoTrack: ((RTCVideoTrack) -> Void)?
     var onAudioTrack: ((RTCAudioTrack) -> Void)?
@@ -34,8 +38,43 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
         var onlyPreferredCodec = false
         /// Video b=AS ceiling in kbps (0 = none).
         var maxVideoBitrateKbps = 0
+        /// Offers RTX for the video codecs (`a=rtpmap … rtx` with `apt=`), so a lost packet can be resent on its own
+        /// stream instead of costing a keyframe. Only has an effect if the console's answer keeps the rtx payloads.
+        var offerRTX = false
+        /// Frames go to the decoder and the renderer as soon as they are complete instead of waiting out libwebrtc's
+        /// jitter-buffer and render delay (see `setLowLatencyPlayout`). Nothing in the SDP changes.
+        var lowLatencyPlayout = false
+        /// Lets the audio jitter buffer (NetEq) speed playback up more readily once it has built up a backlog, so audio
+        /// latency recovers faster after a network hiccup, at the cost of more audible time-stretching.
+        var fastAudioCatchUp = false
+        /// Reports every presented frame's timing on the input channel, as the official web client does (`feedback`).
+        var frameTimingFeedback = false
+        /// Further data channels to open before the offer; probe hook.
+        var extraDataChannels: [DataChannelSpec] = []
     }
     let options: Options
+
+    private static let playoutLock = NSLock()
+    private static var lowLatencyPlayoutApplied = false
+
+    /// Turns libwebrtc's forced playout delay of zero on or off for the video receive streams created from now on.
+    ///
+    /// The only handle this WebRTC build gives on the video jitter buffer is the `WebRTC-ForcePlayoutDelay` field trial
+    /// (the ObjC RTCRtpReceiver has no jitter-buffer delay setter). With `min_ms:0,max_ms:0` libwebrtc takes its
+    /// low-latency path: a frame is decoded when its last packet arrives and handed on right away, where the default
+    /// holds it for the estimated network jitter plus decode and render time. The trial is looked up when a receive
+    /// stream is set up, so it does not have to be in place before the factory exists (measured on loopback:
+    /// jitter-buffer delay drops from ~100 ms to under 1 ms for a connection made after the call, and comes back after
+    /// turning it off). It is process-wide, so it follows the most recent connection; the app has one stream at a time.
+    /// The price: nothing absorbs network jitter any more, so frames reach the renderer as unevenly as they arrive.
+    static func setLowLatencyPlayout(_ on: Bool) {
+        playoutLock.lock(); defer { playoutLock.unlock() }
+        // Only on a change: every call replaces the string libwebrtc's threads read the trials from.
+        guard on != lowLatencyPlayoutApplied else { return }
+        lowLatencyPlayoutApplied = on
+        RTCInitFieldTrialDictionary(on ? ["WebRTC-ForcePlayoutDelay": "min_ms:0,max_ms:0"] : [:])
+        log("WebRTC", "low-latency playout \(on ? "on" : "off")")
+    }
 
     init(options: Options = Options()) throws {
         self.options = options
@@ -45,6 +84,8 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
         config.continualGatheringPolicy = .gatherOnce
         config.bundlePolicy = .maxBundle
         config.rtcpMuxPolicy = .require
+        if options.fastAudioCatchUp { config.audioJitterBufferFastAccelerate = true }
+        WebRTCClient.setLowLatencyPlayout(options.lowLatencyPlayout)
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let factory = WebRTCClient.factory
         // The delegate is set right after super.init().
@@ -59,7 +100,7 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
         let videoInit = RTCRtpTransceiverInit()
         videoInit.direction = .recvOnly
         if let video = pc.addTransceiver(of: .video, init: videoInit) {
-            let prefs = CodecOrdering.preferences(options.codec, onlyPreferred: options.onlyPreferredCodec, factory: factory)
+            let prefs = CodecOrdering.preferences(options.codec, onlyPreferred: options.onlyPreferredCodec, rtx: options.offerRTX, factory: factory)
             if let err = WebRTCClient.setCodecPreferences(video, prefs) {
                 log("WebRTC", "setCodecPreferences failed: \(err)")
             } else {
@@ -72,6 +113,12 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
         input = try InputChannel(pc: pc, queue: queue)
         message = try MessageChannel(pc: pc, queue: queue)
         chat = try ChatChannel(pc: pc, queue: queue)
+        var extra: [DataChannel] = []
+        for c in options.extraDataChannels {
+            extra.append(try DataChannel(pc: pc, name: c.label, protocolName: c.protocolName, ordered: c.ordered, maxRetransmits: c.maxRetransmits, queue: queue))
+        }
+        extraChannels = extra
+        feedback = FrameFeedback(input: input, queue: queue, enabled: options.frameTimingFeedback)
         super.init()
         pc.delegate = self
     }
@@ -180,7 +227,7 @@ final class WebRTCClient: NSObject, RTCPeerConnectionDelegate, @unchecked Sendab
     }
 
     func close() {
-        for ch in [control, input, message, chat] as [DataChannel] { ch.close() }
+        for ch in [control, input, message, chat] + extraChannels { ch.close() }
         pc.close()
     }
 

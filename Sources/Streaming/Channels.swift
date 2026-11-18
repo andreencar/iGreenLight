@@ -1,5 +1,15 @@
 import Foundation
 import WebRTC
+import QuartzCore
+
+/// A data channel to open besides the standard four (probe hook, see `WebRTCClient.Options.extraDataChannels`).
+struct DataChannelSpec {
+    var label: String
+    var protocolName: String
+    var ordered = true
+    /// nil = reliable; 0 = every message is sent once and never resent.
+    var maxRetransmits: Int? = nil
+}
 
 /// Base wrapper for an RTCDataChannel (Greenlight channel/channel.ts).
 class DataChannel: NSObject, RTCDataChannelDelegate {
@@ -7,17 +17,20 @@ class DataChannel: NSObject, RTCDataChannelDelegate {
     let channel: RTCDataChannel
     let queue: DispatchQueue
     var onOpen: (() -> Void)?
+    /// Sees what the default `didReceive` gets, i.e. messages no subclass handles; probe hook.
+    var onUnhandled: ((Data) -> Void)?
 
     struct SetupError: LocalizedError {
         let what: String
         var errorDescription: String? { "Couldn't set up the connection (\(what))." }
     }
 
-    init(pc: RTCPeerConnection, name: String, protocolName: String, ordered: Bool = true, queue: DispatchQueue) throws {
+    init(pc: RTCPeerConnection, name: String, protocolName: String, ordered: Bool = true, maxRetransmits: Int? = nil, queue: DispatchQueue) throws {
         self.name = name
         self.queue = queue
         let cfg = RTCDataChannelConfiguration()
         cfg.isOrdered = ordered
+        if let maxRetransmits { cfg.maxRetransmits = Int32(maxRetransmits) }
         cfg.`protocol` = protocolName
         guard let channel = pc.dataChannel(forLabel: name, configuration: cfg) else { throw SetupError(what: "data channel \(name)") }
         self.channel = channel
@@ -55,6 +68,7 @@ class DataChannel: NSObject, RTCDataChannelDelegate {
     func didReceive(_ data: Data, binary: Bool) {
         log(name, "recv \(data.count) bytes")
         DiagnosticsRecorder.current?.noteUnhandled("\(name) recv (no handler)")
+        onUnhandled?(data)
     }
     func close() { channel.close() }
 }
@@ -195,7 +209,9 @@ final class InputChannel: DataChannel {
     }
 
     private var sequence: UInt32 = 0
-    private let start = Date()
+    /// Time zero of the packet timestamps, on the `CACurrentMediaTime()` clock (monotonic, like the web client's
+    /// performance.now()), so frame times measured by the renderer convert without a second clock.
+    let start = CACurrentMediaTime()
     var onVibration: ((Vibration) -> Void)?
     var onServerVideoSize: ((_ width: Int, _ height: Int) -> Void)?
 
@@ -203,21 +219,18 @@ final class InputChannel: DataChannel {
         try super.init(pc: pc, name: "input", protocolName: "1.0", queue: queue)
     }
 
-    private var now: Double { Date().timeIntervalSince(start) * 1000 }
+    private var now: Double { (CACurrentMediaTime() - start) * 1000 }
     private func nextSeq() -> UInt32 { sequence &+= 1; return sequence }
 
     func sendClientMetadata() {
         send(InputPacket.clientMetadata(sequence: 0, timestampMs: now, maxTouchPoints: 1))
     }
 
-    /// Reports one displayed frame to the server. `decodeMs`/`renderMs` are how long decoding and presenting took.
-    func sendFrameMetadata(rtpTimestamp: UInt32, decodeMs: Double, renderMs: Double) {
-        guard isOpen else { return }
-        let t = now
-        let submitted = t - renderMs - decodeMs
-        let f = FrameMetadata(serverDataKey: rtpTimestamp, firstPacketArrivalMs: submitted - 2, submittedMs: submitted,
-                              decodedMs: submitted + decodeMs, renderedMs: t)
-        send(InputPacket.frameMetadata(sequence: nextSeq(), timestampMs: t, frames: [f]))
+    /// Reports displayed frames to the server (report type 1), several per packet if need be, oldest first.
+    /// Call on the WebRTC queue; `FrameFeedback` does that for frames coming from the renderer.
+    func sendFrameMetadata(_ frames: [PresentedFrame]) {
+        guard isOpen, !frames.isEmpty else { return }
+        send(InputPacket.frameMetadata(sequence: nextSeq(), timestampMs: now, frames: frames.map { $0.metadata(channelStart: start) }))
     }
 
     func send(gamepads: [GamepadFrame] = [], mouse: [MouseFrame] = [], keyboard: [KeyboardFrame] = []) {

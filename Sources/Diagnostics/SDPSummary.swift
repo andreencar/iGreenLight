@@ -92,6 +92,23 @@ struct SDPSummary {
         s.media.contains { $0.extmaps.contains { $0.uri == colorSpaceURI } }
     }
 
+    /// With this extension in the answer the sender can ask for a playout delay itself (0 = show at once), which
+    /// would make forcing one on our side redundant.
+    static let playoutDelayURI = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+
+    static func hasPlayoutDelay(_ s: SDPSummary) -> Bool {
+        s.video?.extmaps.contains { $0.uri == playoutDelayURI } ?? false
+    }
+
+    /// Payload types of the video codecs that have an RTX stream (`a=fmtp:<rtx pt> apt=<codec pt>`), in m-line order.
+    /// Empty = no retransmission stream in this description.
+    static func rtxProtected(_ s: SDPSummary) -> [String] {
+        guard let v = s.video else { return [] }
+        return v.orderedCodecs.filter { $0.name.lowercased() == "rtx" }.compactMap { c in
+            c.fmtp?.split(separator: ";").first { $0.hasPrefix("apt=") }.map { String($0.dropFirst(4)) }
+        }.filter { v.codecs[$0] != nil }
+    }
+
     /// First non-RTX/FEC codec in the answer's video m-line = what the server will send.
     static func selectedVideoCodec(_ s: SDPSummary) -> String? {
         guard let v = s.video else { return nil }
@@ -128,6 +145,9 @@ struct SDPSummary {
         out["offeredVideoCodecs"] = offer.video?.orderedCodecs.map(\.label) ?? []
         out["colorSpaceExtensionOffered"] = hasColorSpace(offer)
         out["colorSpaceExtensionNegotiated"] = hasColorSpace(answer)
+        out["rtxOffered"] = !rtxProtected(offer).isEmpty
+        out["rtxNegotiated"] = !rtxProtected(answer).isEmpty
+        out["playoutDelayExtensionNegotiated"] = hasPlayoutDelay(answer)
         out["answerVideoExtensions"] = answer.video?.extmaps.map(\.uri) ?? []
         out["answerVideoBandwidth"] = answer.video?.bandwidth ?? []
         out["offerVideoBandwidth"] = offer.video?.bandwidth ?? []

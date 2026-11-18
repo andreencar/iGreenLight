@@ -1,6 +1,7 @@
 // Developer tool: compiled into debug builds only.
 #if DEBUG
 import Foundation
+import QuartzCore
 import WebRTC
 
 /// Headless hypothesis runner: `iGreenLight --probe <spec.json> --probe-out <results.jsonl>` (see scripts/probe.sh).
@@ -24,7 +25,18 @@ import WebRTC
 /// * `capabilities`      – content of the clientdevicecapabilities message
 /// * `messages`          – [{"target": "/streaming/…", "content": {…}}] sent on the message channel after config
 /// * `control`           – extra control-channel JSON messages; with `"afterSeconds": n` sent n s into the media phase
-/// * `frameMetadata`     – {"decodeMs": 4, "renderMs": 2}: send per-frame timing feedback on the input channel
+/// * `frameMetadata`     – {"decodeMs": 4, "renderMs": 2}: send per-frame timing feedback on the input channel with
+///                         these made-up durations (what does the server do with a slow or a fast client?)
+/// * `frameFeedback`     – true: send the feedback the app itself sends (`Options.frameTimingFeedback`), with the
+///                         probe's frame tap standing in for the renderer (a frame counts as shown when it arrives)
+/// * `rtx`               – true: offer RTX (`Options.offerRTX`)
+/// * `lowLatencyPlayout` – true: no jitter-buffer delay (`Options.lowLatencyPlayout`)
+/// * `fastAudioCatchUp`  – true: `Options.fastAudioCatchUp`
+/// * `channels`          – [{"label": "…", "protocol": "…", "ordered": false, "maxRetransmits": 0}] extra data channels
+///                         opened before the offer; the result lists each one's final state and what arrived on it
+/// * `inputOn`           – label of the channel (`input` or one of `channels`) that gets a neutral pad-0 report
+///                         `inputHz` (default 30) times a second during the media phase; without it the probe sends
+///                         no input reports at all, and the console ends such a session about a minute in
 /// * `mediaSeconds`      – 0 (default) = stop after the SDP answer; >0 = connect and capture that many seconds
 enum Probe {
     static var specPath: String? { arg("--probe") }
@@ -104,6 +116,8 @@ enum Probe {
         api.extraHeaders = p["headers"] as? [String: String] ?? [:]
         var rtc: WebRTCClient?
         var track: RTCVideoTrack?
+        var inputTimer: DispatchSourceTimer?
+        let received = Received()
         let tap = SelfTest.FrameTap()
         do {
             _ = try await api.play(target: serverId, locale: AppSettings.shared.locale, osName: osName)
@@ -112,9 +126,24 @@ enum Probe {
             if let cfg = try? await api.configuration() { r["configurationKeys"] = cfg.keys.sorted() }
 
             let pref = VideoCodecPreference(rawValue: p["codec"] as? String ?? "h264High") ?? .h264High
-            let client = try WebRTCClient(options: .init(codec: pref, onlyPreferredCodec: p["onlyPreferred"] as? Bool ?? false,
-                                                    maxVideoBitrateKbps: p["maxKbps"] as? Int ?? 0))
+            var options = WebRTCClient.Options(codec: pref, onlyPreferredCodec: p["onlyPreferred"] as? Bool ?? false,
+                                               maxVideoBitrateKbps: p["maxKbps"] as? Int ?? 0)
+            options.offerRTX = p["rtx"] as? Bool ?? false
+            options.lowLatencyPlayout = p["lowLatencyPlayout"] as? Bool ?? false
+            options.fastAudioCatchUp = p["fastAudioCatchUp"] as? Bool ?? false
+            options.frameTimingFeedback = p["frameFeedback"] as? Bool ?? false
+            options.extraDataChannels = (p["channels"] as? [[String: Any]] ?? []).compactMap { c in
+                (c["label"] as? String).map {
+                    DataChannelSpec(label: $0, protocolName: c["protocol"] as? String ?? "", ordered: c["ordered"] as? Bool ?? true,
+                                    maxRetransmits: c["maxRetransmits"] as? Int)
+                }
+            }
+            let client = try WebRTCClient(options: options)
             rtc = client
+            for ch in client.extraChannels { ch.onUnhandled = { [name = ch.name] in received.note(name, $0) } }
+            client.input.onServerVideoSize = { _, _ in received.note("input", Data([UInt8(ReportType.serverMetadata.rawValue)])) }
+            client.input.onVibration = { _ in received.note("input", Data([UInt8(ReportType.vibration.rawValue)])) }
+            client.message.onServerDisconnect = { received.note("serverInitiatedDisconnect", Data()) }
             client.message.deviceCapabilities = p["capabilities"] as? [String: Any] ?? [:]
             client.message.extraMessages = (p["messages"] as? [[String: Any]] ?? []).compactMap { m in
                 (m["target"] as? String).map { ($0, m["content"] as? [String: Any] ?? [:]) }
@@ -130,8 +159,16 @@ enum Probe {
             if let fm = p["frameMetadata"] as? [String: Any] {
                 let decodeMs = (fm["decodeMs"] as? NSNumber)?.doubleValue ?? 4, renderMs = (fm["renderMs"] as? NSNumber)?.doubleValue ?? 2
                 tap.onFrame = { [weak client] frame in
-                    let ts = UInt32(bitPattern: frame.timeStamp)
-                    client?.queue.async { client?.input.sendFrameMetadata(rtpTimestamp: ts, decodeMs: decodeMs, renderMs: renderMs) }
+                    // Shown now, having taken renderMs to present and decodeMs to decode, 2 ms after its first packet.
+                    let shown = CACurrentMediaTime(), arrived = shown - renderMs / 1000
+                    let f = PresentedFrame(rtpTimestamp: UInt32(bitPattern: frame.timeStamp), arrivedAt: arrived, presentedAt: shown,
+                                        decodeMs: decodeMs, firstPacketAt: arrived - (decodeMs + 2) / 1000)
+                    client?.queue.async { client?.input.sendFrameMetadata([f]) }
+                }
+            } else if options.frameTimingFeedback {
+                tap.onFrame = { [weak client] frame in
+                    let t = CACurrentMediaTime()
+                    client?.feedback.framePresented(rtpTimestamp: UInt32(bitPattern: frame.timeStamp), arrivedAt: t, presentedAt: t)
                 }
             } else { tap.onFrame = nil }
             client.onVideoTrack = { t in if track == nil { track = t; t.add(tap) } }
@@ -185,6 +222,11 @@ enum Probe {
             r["offers"] = answers
             r["accepted"] = answers.first?["accepted"] ?? false
             r["selected"] = answers.first?["selected"] ?? "-"
+            if options.offerRTX {
+                r["rtxOffered"] = !SDPSummary.rtxProtected(SDPSummary(offer)).isEmpty
+                r["rtxNegotiated"] = firstAnswer.map { !SDPSummary.rtxProtected(SDPSummary($0)).isEmpty } ?? false
+            }
+            if let firstAnswer { r["playoutDelayExtension"] = SDPSummary.hasPlayoutDelay(SDPSummary(firstAnswer)) }
 
             let media = p["mediaSeconds"] as? Int ?? 0
             if media > 0, let answer = firstAnswer {
@@ -195,8 +237,16 @@ enum Probe {
                     guard let (sdp, mid, index) = ICEHelper.remoteCandidate(c) else { continue }
                     await client.addRemoteCandidate(sdp, mid: mid, index: index)
                 }
+                if let label = p["inputOn"] as? String {
+                    let hz = max(1, (p["inputHz"] as? NSNumber)?.doubleValue ?? 30)
+                    if !startInput(on: label, hz: hz, client: client, timer: &inputTimer) { r["inputError"] = "no channel \(label)" }
+                }
+                var lastFrames = 0
                 for second in 0..<(media + 6) {
                     try await Task.sleep(nanoseconds: 1_000_000_000)
+                    // When the picture stopped and how the connection ended tell a session the console dropped from one it kept.
+                    if tap.frames > lastFrames { lastFrames = tap.frames; r["lastFrameSecond"] = second }
+                    r["connectionState"] = connectionStates[client.pc.connectionState.rawValue] ?? "?"
                     // Control messages with "afterSeconds": n are sent n seconds into the media phase.
                     for var c in controlExtras where (c["afterSeconds"] as? Int) == second {
                         c["afterSeconds"] = nil
@@ -210,7 +260,16 @@ enum Probe {
         } catch {
             r["error"] = "\(error)".prefix(400).description
         }
+        inputTimer?.cancel()
         if let track { track.remove(tap) }
+        if let rtc, p["channels"] != nil || p["inputOn"] != nil {
+            var channels: [String: Any] = [:]
+            for ch in [rtc.input as DataChannel] + rtc.extraChannels {
+                channels[ch.name] = ["state": channelStates[ch.channel.readyState.rawValue] ?? "?", "received": received.summary(ch.name)]
+            }
+            r["channels"] = channels
+        }
+        if let s = received.firstSeen("serverInitiatedDisconnect") { r["serverDisconnectAtSecond"] = round1(s.timeIntervalSince(t0)) }
         if let rtc { rtc.queue.async { rtc.control.gamepadChanged(index: 0, added: false) }; try? await Task.sleep(nanoseconds: 200_000_000); rtc.close() }
         await api.stop()
         rec?.finish(reason: "probe")
@@ -224,7 +283,9 @@ enum Probe {
             }
             let sei = (res["bitstream"] as? [[String: Any]] ?? []).filter { $0["nal"] as? String == "SEI" }.compactMap { $0["seiTypes"] }
             if !sei.isEmpty { r["seiTypes"] = sei }
-            for k in ["pixelFormats", "colorInfo", "hdrMetadataSeen", "statsResolutions", "videoMbps", "unhandledMessages", "serverReportedVideoSizes"] {
+            for k in ["pixelFormats", "colorInfo", "hdrMetadataSeen", "statsResolutions", "videoMbps", "unhandledMessages", "serverReportedVideoSizes",
+                      "rttMs", "jitterBufferMs", "decodeMs", "nackTotal", "pliTotal", "freezesTotal", "freezeSecondsTotal", "framesDroppedTotal",
+                      "packetsReceivedTotal", "packetsLostTotal", "retransmittedPacketsTotal", "retransmittedBytesTotal", "fecPacketsTotal"] {
                 if let v = res[k], !((v as? [Any])?.isEmpty ?? false), !((v as? [String: Any])?.isEmpty ?? false) { r[k] = v }
             }
         }
@@ -233,6 +294,58 @@ enum Probe {
     }
 
     static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
+
+    static let channelStates = [RTCDataChannelState.connecting.rawValue: "connecting", RTCDataChannelState.open.rawValue: "open",
+                                RTCDataChannelState.closing.rawValue: "closing", RTCDataChannelState.closed.rawValue: "closed"]
+    static let connectionStates = [RTCPeerConnectionState.new.rawValue: "new", RTCPeerConnectionState.connecting.rawValue: "connecting",
+                                   RTCPeerConnectionState.connected.rawValue: "connected", RTCPeerConnectionState.disconnected.rawValue: "disconnected",
+                                   RTCPeerConnectionState.failed.rawValue: "failed", RTCPeerConnectionState.closed.rawValue: "closed"]
+
+    /// What came in per channel (filled from the WebRTC queue, read by the probe at the end).
+    final class Received: @unchecked Sendable {
+        private let lock = NSLock()
+        private var counts: [String: Int] = [:]
+        private var first: [String: (at: Date, bytes: Data)] = [:]
+
+        func note(_ channel: String, _ data: Data) {
+            lock.lock(); defer { lock.unlock() }
+            counts[channel, default: 0] += 1
+            if first[channel] == nil { first[channel] = (Date(), data.prefix(32)) }
+        }
+
+        func firstSeen(_ channel: String) -> Date? { lock.lock(); defer { lock.unlock() }; return first[channel]?.at }
+
+        func summary(_ channel: String) -> [String: Any] {
+            lock.lock(); defer { lock.unlock() }
+            var s: [String: Any] = ["messages": counts[channel] ?? 0]
+            if let f = first[channel] { s["firstHex"] = f.bytes.map { String(format: "%02x", $0) }.joined() }
+            return s
+        }
+    }
+
+    /// Sends a neutral pad-0 report `hz` times a second on the channel with this label: through the app's own input
+    /// channel for `input`, as the same packet (preceded by the client metadata report) on any other channel.
+    /// Returns false when there is no such channel.
+    static func startInput(on label: String, hz: Double, client: WebRTCClient, timer: inout DispatchSourceTimer?) -> Bool {
+        let extra = client.extraChannels.first { $0.name == label }
+        guard label == client.input.name || extra != nil else { return false }
+        let start = CACurrentMediaTime()
+        var sequence: UInt32 = 0, saidHello = false
+        let t = DispatchSource.makeTimerSource(queue: client.queue)
+        t.schedule(deadline: .now(), repeating: 1 / hz)
+        t.setEventHandler { [weak client] in
+            guard let client else { return }
+            guard let extra else { client.input.send(gamepads: [GamepadFrame()]); return }
+            guard extra.isOpen else { return }
+            let now = (CACurrentMediaTime() - start) * 1000
+            if !saidHello { saidHello = true; extra.send(InputPacket.clientMetadata(sequence: 0, timestampMs: now)) }
+            sequence &+= 1
+            extra.send(InputPacket.report(sequence: sequence, timestampMs: now, gamepads: [GamepadFrame()]))
+        }
+        t.resume()
+        timer = t
+        return true
+    }
 
     /// rtpmap/fmtp/b= lines of the video section, for compact reporting.
     static func videoLines(_ sdp: String) -> [String] {

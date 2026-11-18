@@ -1,0 +1,10 @@
+{
+  "gapSeconds": 10,
+  "probes": [
+    {"name": "reference A: default playout (jitterBufferMs is the delay to beat)", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "low-latency playout A (jitterBufferMs should be near 0; watch freezes and framesDropped)", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "lowLatencyPlayout": true},
+    {"name": "reference B: default playout", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "low-latency playout B", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "lowLatencyPlayout": true},
+    {"name": "low-latency playout + fast audio catch-up", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "lowLatencyPlayout": true, "fastAudioCatchUp": true}
+  ]
+}

@@ -188,7 +188,9 @@ final class VTHEVCDecoder: NSObject, RTCVideoDecoder {
 
 /// Codec ordering for the video transceiver (the offer's m=video payload order).
 enum CodecOrdering {
-    static func preferences(_ pref: VideoCodecPreference, onlyPreferred: Bool, factory: RTCPeerConnectionFactory) -> [RTCRtpCodecCapability] {
+    /// `rtx`: also offer retransmission. The capabilities carry one generic `rtx` entry; with it in the preferences
+    /// libwebrtc writes an rtx payload type with `apt=` for every video codec in the offer.
+    static func preferences(_ pref: VideoCodecPreference, onlyPreferred: Bool, rtx: Bool = false, factory: RTCPeerConnectionFactory) -> [RTCRtpCodecCapability] {
         let caps = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs
         func plid(_ c: RTCRtpCodecCapability) -> String { (c.parameters["profile-level-id"] ?? "").lowercased() }
         func h264(_ prefix: String) -> [RTCRtpCodecCapability] { caps.filter { $0.name.uppercased() == "H264" && plid($0).hasPrefix(prefix) } }
@@ -209,8 +211,8 @@ enum CodecOrdering {
         case .vp9p2: preferred = named("VP9", "profile-id", "2")
         case .av1: preferred = named("AV1")
         }
-        // Same FEC set as before (no RTX/RED), then VP9/VP8 as the last fallbacks.
-        let fec = caps.filter { ["ULPFEC", "FLEXFEC-03"].contains($0.name.uppercased()) }
+        // Same FEC set as before (no RED, RTX only on request), then VP9/VP8 as the last fallbacks.
+        let fec = caps.filter { ["ULPFEC", "FLEXFEC-03"].contains($0.name.uppercased()) || rtx && $0.name.uppercased() == "RTX" }
         var out = preferred
         if !onlyPreferred {
             for c in defaultH264 where !out.contains(where: { $0 === c }) { out.append(c) }

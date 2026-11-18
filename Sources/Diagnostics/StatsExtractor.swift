@@ -114,7 +114,8 @@ enum StatsExtractor {
         if let v = out["video"] as? [String: Any] {
             var flat: [String: Any] = [:]
             for k in ["videoMbps", "avgQp", "decoderImplementation", "nackCount", "pliCount", "freezeCount", "totalFreezesDuration", "pauseCount", "framesDropped", "packetsLost",
-                      "frameWidth", "frameHeight", "keyFramesDecoded", "decodeMsPerFrame", "jitterBufferMs"] { flat[k] = v[k] }
+                      "frameWidth", "frameHeight", "keyFramesDecoded", "decodeMsPerFrame", "jitterBufferMs",
+                      "packetsReceived", "retransmittedPacketsReceived", "retransmittedBytesReceived", "fecPacketsReceived"] { flat[k] = v[k] }
             flat["fps"] = v["framesPerSecond"]
             if let c = v["codec"] as? [String: Any] { flat["codec"] = "\(c["mimeType"] ?? "?") \(c["sdpFmtpLine"] ?? "")" }
             if let p = out["candidatePair"] as? [String: Any] { flat["path"] = p["path"]; flat["rttMs"] = p["rttMs"] }
@@ -163,6 +164,8 @@ struct Aggregate {
     var maxMbps: Double = 0
     var qps: [Double] = []
     var rtts: [Double] = []
+    var jitterBufferMs: [Double] = []
+    var decodeMs: [Double] = []
     var codecs = Set<String>()
     var decoders = Set<String>()
     var paths = Set<String>()
@@ -175,6 +178,8 @@ struct Aggregate {
         if let m = flat["videoMbps"] as? Double { mbps.append(m); maxMbps = max(maxMbps, m) }
         if let q = flat["avgQp"] as? Double { qps.append(q) }
         if let r = flat["rttMs"] as? Double { rtts.append(r) }
+        if let j = flat["jitterBufferMs"] as? Double { jitterBufferMs.append(j) }
+        if let d = flat["decodeMsPerFrame"] as? Double { decodeMs.append(d) }
         if let c = flat["codec"] as? String { codecs.insert(c) }
         if let d = flat["decoderImplementation"] { decoders.insert("\(d)") }
         if let p = flat["path"] as? String { paths.insert(p) }
@@ -234,6 +239,15 @@ struct Aggregate {
         }
         if let last = lastStats["nackCount"] { r["nackTotal"] = last }
         if let last = lastStats["pliCount"] { r["pliTotal"] = last }
+        // What decides the transport options: how long frames sit in the jitter buffer (per-second averages, ramp-up
+        // included), and how much loss was repaired by retransmission (only non-zero when RTX was negotiated) or FEC.
+        if !jitterBufferMs.isEmpty { r["jitterBufferMs"] = stats(jitterBufferMs) }
+        if !decodeMs.isEmpty { r["decodeMs"] = stats(decodeMs) }
+        for (key, name) in [("packetsReceived", "packetsReceivedTotal"), ("packetsLost", "packetsLostTotal"),
+                            ("retransmittedPacketsReceived", "retransmittedPacketsTotal"),
+                            ("retransmittedBytesReceived", "retransmittedBytesTotal"), ("fecPacketsReceived", "fecPacketsTotal")] {
+            if let last = lastStats[key] { r[name] = last }
+        }
         return r
     }
 
@@ -245,7 +259,9 @@ struct Aggregate {
         s += "\n## Results\n\n"
         let order = ["selectedVideoCodec", "statsCodecs", "decoderImplementations", "statsResolutions", "decodedSizes", "serverReportedVideoSizes",
                      "pixelFormats", "colorInfo", "hdrMetadataSeen", "colorSpaceExtensionNegotiated", "answerVideoBandwidth", "videoMbps", "avgQp",
-                     "rttMs", "paths", "framesDroppedTotal", "freezesTotal", "freezeSecondsTotal", "pausesTotal", "nackTotal", "pliTotal", "framePacing",
+                     "rttMs", "paths", "framesDroppedTotal", "freezesTotal", "freezeSecondsTotal", "pausesTotal", "nackTotal", "pliTotal",
+                     "jitterBufferMs", "decodeMs", "packetsReceivedTotal", "packetsLostTotal", "retransmittedPacketsTotal", "retransmittedBytesTotal",
+                     "fecPacketsTotal", "framePacing",
                      "unhandledMessages", "bitstream"]
         for k in order { if let v = r[k] { s += "- **\(k)**: \(Aggregate.short(v))\n" } }
         s += "\n## HTTP calls\n\n"

@@ -33,6 +33,7 @@
 		3CF687AD5F5F7F984605ECDF /* app.igreenlight.awdl-daemon.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = F7E5DF29230DB9C7B38242B6 /* app.igreenlight.awdl-daemon.plist */; };
 		3DC3CF3162D7F4C6F0AD4130 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = E2996CAAAF994F41AD128778 /* WebRTC */; };
 		4083EEF812256B596C8723FC /* InputPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32CEDC8F31445B4712FCFC4 /* InputPacket.swift */; };
+		4879AADD4D889D5A4489795F /* FrameFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A97551C820081A567D5C08 /* FrameFeedback.swift */; };
 		4AC0D28CE5C7EF89F9E79C8F /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2413377DE72D013CCFE402B /* SignInView.swift */; };
 		4B3AFEDE29FC281DF7851415 /* GamepadInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008870062782A81DC569DA20 /* GamepadInput.swift */; };
 		4C734469C3FD85B7F342896C /* StreamStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC7221FDCA4ED27A2C5E38F /* StreamStats.swift */; };
@@ -79,6 +80,7 @@
 		A8F12237BDC034EC9086A20B /* XboxTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEDF1C388561290CC162C080 /* XboxTheme.swift */; };
 		AA9EF744E0BBA1116FF4AA9A /* MouseStickTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C286B96942B31CD2ACCB3A /* MouseStickTests.swift */; };
 		AC0F83E6EAA0EE327D048CED /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2413377DE72D013CCFE402B /* SignInView.swift */; };
+		AC40ED99CF38E91750519B44 /* TransportOptionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60FDDCE5E81DBB80F837CA9 /* TransportOptionsTests.swift */; };
 		B0BBF56C7746997E04AA342D /* ICE.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4623FD878F55005D8EBBD928 /* ICE.swift */; };
 		B1AD812DAB8897E9E93429E6 /* PadNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E105649F06F83C4BC99F62 /* PadNavigator.swift */; };
 		B533E40E3C25592397F1DDCF /* KeyboardMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F39D45BDB5D8466DF37EFF /* KeyboardMapTests.swift */; };
@@ -100,6 +102,7 @@
 		C6A49DFDBB8F8F9DF9FFF844 /* StreamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37550535008536BF1AD0A9F7 /* StreamView.swift */; };
 		C72C8AEAEF11E5F85B99A19B /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03ED4B9FBB640CA9E6159FF9 /* Log.swift */; };
 		C75DCA516911FBA83F3E8CA8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5150C6F54F9B691D7AFBEBA5 /* SettingsView.swift */; };
+		C8A99B864BFAA63D59AB50C1 /* FrameFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A97551C820081A567D5C08 /* FrameFeedback.swift */; };
 		C9880B2960C0DFD2820378BF /* MouseInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 828C580048A6525282EB368A /* MouseInput.swift */; };
 		CA3114D95747735123061FFA /* VideoCodecs.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4B85FA7E1ACEE47CCD37D15 /* VideoCodecs.swift */; };
 		CA5356F1A91ED591231D8676 /* Platform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D47142685207F4194FAB963 /* Platform.swift */; };
@@ -230,7 +233,9 @@
 		E89FE5D0B83E636AA370CA91 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		E98099FA352BA7DCFA050A59 /* CloudLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudLibraryView.swift; sourceTree = "<group>"; };
 		EF4427080A28ED247861F3FE /* iGreenLight-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "iGreenLight-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4A97551C820081A567D5C08 /* FrameFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameFeedback.swift; sourceTree = "<group>"; };
 		F52D910F645983FB585FFDA8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F60FDDCE5E81DBB80F837CA9 /* TransportOptionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportOptionsTests.swift; sourceTree = "<group>"; };
 		F7E5DF29230DB9C7B38242B6 /* app.igreenlight.awdl-daemon.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "app.igreenlight.awdl-daemon.plist"; sourceTree = "<group>"; };
 		F7F39D45BDB5D8466DF37EFF /* KeyboardMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMapTests.swift; sourceTree = "<group>"; };
 		F8733452502A5EB9AF49C111 /* DeviceInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceInfo.swift; sourceTree = "<group>"; };
@@ -290,6 +295,7 @@
 				029018A51C2A61308A652F09 /* RenderQualityTests.swift */,
 				5B8289D75E1A72175065AA1E /* SDPAndBitstreamTests.swift */,
 				FCF22C7C16135E50FB5A4D03 /* ShaderTests.swift */,
+				F60FDDCE5E81DBB80F837CA9 /* TransportOptionsTests.swift */,
 			);
 			path = iGreenLightTests;
 			sourceTree = "<group>";
@@ -362,6 +368,7 @@
 			children = (
 				592BEECE0179C97B9477E8E7 /* AWDLHold.swift */,
 				3131402ED84A6C958FAEE8E0 /* Channels.swift */,
+				F4A97551C820081A567D5C08 /* FrameFeedback.swift */,
 				FC226658A93EA3362810106A /* GameAudioDevice.swift */,
 				4623FD878F55005D8EBBD928 /* ICE.swift */,
 				A32CEDC8F31445B4712FCFC4 /* InputPacket.swift */,
@@ -669,6 +676,7 @@
 				B687259BDCFC4567C339C416 /* RenderQualityTests.swift in Sources */,
 				BD3B1EB8EBFA4249003A58C8 /* SDPAndBitstreamTests.swift in Sources */,
 				70244E3DCE423DBE89D33CEF /* ShaderTests.swift in Sources */,
+				AC40ED99CF38E91750519B44 /* TransportOptionsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -685,6 +693,7 @@
 				7B7006BBCE1DB52DD47E4E45 /* ConsoleListView.swift in Sources */,
 				4F5AF6857C5D29EA1452A9D9 /* DeviceInfo.swift in Sources */,
 				20C381D9BD0BFF48BBA3265B /* DiagnosticsRecorder.swift in Sources */,
+				4879AADD4D889D5A4489795F /* FrameFeedback.swift in Sources */,
 				BCF8C13EDB5883635526B04E /* FrameInspector.swift in Sources */,
 				3B9A34E48A2DF2006DB3B30C /* GameAudioDevice.swift in Sources */,
 				19FEA3EEFD6D6B01A6256652 /* GamePassAPI.swift in Sources */,
@@ -747,6 +756,7 @@
 				787355EB055A5386CA50501D /* ConsoleListView.swift in Sources */,
 				CAE4405DD31721056FBED478 /* DeviceInfo.swift in Sources */,
 				A0034F2244BA03D0027DF896 /* DiagnosticsRecorder.swift in Sources */,
+				C8A99B864BFAA63D59AB50C1 /* FrameFeedback.swift in Sources */,
 				E8405891FCCCE7499BC18A76 /* FrameInspector.swift in Sources */,
 				D80D144A647ADFBFC3ED7FA1 /* GameAudioDevice.swift in Sources */,
 				BEA425C6CDD47B87816800E7 /* GamePassAPI.swift in Sources */,

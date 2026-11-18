@@ -1,0 +1,11 @@
+{
+  "gapSeconds": 10,
+  "probes": [
+    {"name": "reference A: H264 Main only, no RTX", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "RTX offered A (rtxNegotiated = did the console keep it; then nack / retransmitted / pli / freezes)", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "rtx": true},
+    {"name": "reference B: H264 Main only, no RTX", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25},
+    {"name": "RTX offered B", "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 25, "rtx": true},
+    {"name": "RTX offered with the full codec list (SDP only: which rtx payloads survive in the answer)", "codec": "h264Main", "rtx": true},
+    {"name": "RTX offered, HEVC Main only (SDP only)", "codec": "hevcMain", "onlyPreferred": true, "rtx": true}
+  ]
+}

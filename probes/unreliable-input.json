@@ -1,0 +1,33 @@
+{
+  "gapSeconds": 15,
+  "probes": [
+    {"name": "control: no input reports at all (expect serverDisconnect / last frame about 60 s in)",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 80},
+    {"name": "reference: input v1-8, neutral pad on `input` (expect the session to last the 80 s)",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 80, "inputOn": "input"},
+    {"name": "v9-10 offered, reliableinput + unreliableinput open with protocol 1.0, nothing sent (do they open, what arrives on which)",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 20,
+     "sdpConfigMerge": {"input": {"minVersion": 1, "maxVersion": 10}, "useUnreliableInput": true,
+                        "unreliableinput": {"minVersion": 9, "maxVersion": 10}, "reliableinput": {"minVersion": 9, "maxVersion": 10}},
+     "channels": [{"label": "reliableinput", "protocol": "1.0", "ordered": true},
+                  {"label": "unreliableinput", "protocol": "1.0", "ordered": false, "maxRetransmits": 0}]},
+    {"name": "v9-10, pad reports on unreliableinput only (survives 80 s = the console reads input there in the v1-8 packet format)",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 80, "inputOn": "unreliableinput",
+     "sdpConfigMerge": {"input": {"minVersion": 1, "maxVersion": 10}, "useUnreliableInput": true,
+                        "unreliableinput": {"minVersion": 9, "maxVersion": 10}, "reliableinput": {"minVersion": 9, "maxVersion": 10}},
+     "channels": [{"label": "reliableinput", "protocol": "1.0", "ordered": true},
+                  {"label": "unreliableinput", "protocol": "1.0", "ordered": false, "maxRetransmits": 0}]},
+    {"name": "v9-10, pad reports on reliableinput only",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 80, "inputOn": "reliableinput",
+     "sdpConfigMerge": {"input": {"minVersion": 1, "maxVersion": 10}, "useUnreliableInput": true,
+                        "unreliableinput": {"minVersion": 9, "maxVersion": 10}, "reliableinput": {"minVersion": 9, "maxVersion": 10}},
+     "channels": [{"label": "reliableinput", "protocol": "1.0", "ordered": true},
+                  {"label": "unreliableinput", "protocol": "1.0", "ordered": false, "maxRetransmits": 0}]},
+    {"name": "v9-10, pad reports still on `input` (is the old channel still read once v9 is negotiated)",
+     "codec": "h264Main", "onlyPreferred": true, "mediaSeconds": 80, "inputOn": "input",
+     "sdpConfigMerge": {"input": {"minVersion": 1, "maxVersion": 10}, "useUnreliableInput": true,
+                        "unreliableinput": {"minVersion": 9, "maxVersion": 10}, "reliableinput": {"minVersion": 9, "maxVersion": 10}},
+     "channels": [{"label": "reliableinput", "protocol": "1.0", "ordered": true},
+                  {"label": "unreliableinput", "protocol": "1.0", "ordered": false, "maxRetransmits": 0}]}
+  ]
+}

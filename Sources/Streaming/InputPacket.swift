@@ -43,7 +43,21 @@ struct GamepadFrame: Equatable {
 struct MouseFrame { var x: Int32, y: Int32, wheelX: Int32 = 0, wheelY: Int32 = 0, buttons: UInt8, relative: UInt8 = 0 }
 struct KeyboardFrame { var pressed: Bool; var vkey: UInt8 }
 
-struct FrameMetadata { var serverDataKey: UInt32; var firstPacketArrivalMs, submittedMs, decodedMs, renderedMs: Double }
+/// One frame of the timing feedback report, with the fields Greenlight's input packet writes
+/// (serverDataKey, firstFramePacketArrivalTimeMs, frameSubmittedTimeMs, frameDecodedTimeMs, frameRenderedTimeMs).
+/// Times are milliseconds on the input channel's clock, the one the packet header's timestamp uses.
+struct FrameMetadata: Equatable {
+    /// The frame's RTP timestamp; the server uses it to find the frame the report is about.
+    var serverDataKey: UInt32
+    /// When the first packet of the frame arrived.
+    var firstPacketArrivalMs: Double
+    /// When the complete frame was handed to the decoder.
+    var submittedMs: Double
+    /// When the decoder returned it.
+    var decodedMs: Double
+    /// When it was shown.
+    var renderedMs: Double
+}
 
 enum ReportType: UInt16 {
     case none = 0, metadata = 1, gamepad = 2, pointer = 4, clientMetadata = 8, serverMetadata = 16
@@ -81,6 +95,8 @@ enum InputPacket {
 
     /// Per-frame timing feedback (report type 1), as the official web client sends for every displayed frame:
     /// count, then 7 × u32 per frame (RTP timestamp, then times in 0.1 ms units on the input channel's clock).
+    /// The last two values of a frame are when the packet was written (Greenlight's framePacketTime and frameDateNow).
+    /// At most 255 frames fit in a packet; any beyond that are left out.
     static func frameMetadata(sequence: UInt32, timestampMs: Double, frames: [FrameMetadata]) -> Data {
         var w = ByteWriter()
         header(&w, type: ReportType.metadata.rawValue, sequence: sequence, timestampMs: timestampMs)

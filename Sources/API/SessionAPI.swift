@@ -123,7 +123,8 @@ struct SessionAPI {
             "chat": ["minVersion": 1, "maxVersion": 1],
             "control": ["minVersion": 1, "maxVersion": 3],
             // Greenlight desktop (the shipping app) negotiates input v1-8 on a single `input` channel.
-            // Offering v9 also needs the `reliableinput`/`unreliableinput` channels, which we don't open.
+            // Offering v9 also needs the `reliableinput`/`unreliableinput` channels, which we don't open: what goes on
+            // which of them, and in what format, is not known yet (probes/unreliable-input.json is there to find out).
             "input": ["minVersion": 1, "maxVersion": 8],
             "message": ["minVersion": 1, "maxVersion": 1],
         ]
